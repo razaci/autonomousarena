@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ECHO • Autonomous AI Arena</title>
+<style>
+:root{color-scheme:dark;--bg:#080e19;--panel:#101c2b;--line:#27415a;--a:#55dcff;--b:#ffad67;--txt:#dcecf6}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top,#152d43,#070b13 70%);color:var(--txt);font:15px system-ui,Segoe UI,sans-serif}
+header{padding:22px 24px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+h1{margin:0;color:white;letter-spacing:.08em;font-size:25px}small,.muted{color:#90a8ba}
+main{max-width:1500px;margin:auto;padding:18px;display:grid;grid-template-columns:minmax(350px,1fr) 330px;gap:16px}
+.panel{background:#101b2bdc;border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:0 15px 35px #0004}
+.toolbar{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin-bottom:14px}
+button,select,input{background:#1a3148;color:#e8f6ff;border:1px solid #37617b;border-radius:9px;padding:10px;cursor:pointer}
+button:hover{background:#28506a}button.primary{background:#116580}button:disabled{opacity:.5}
+input[type=range]{padding:0;width:120px;vertical-align:middle}
+canvas{display:block;width:100%;max-width:850px;aspect-ratio:1;margin:auto;background:#08131c;border:1px solid #31536a;border-radius:12px;touch-action:none}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin:12px 0}
+.stat{background:#0a1522;border:1px solid #20384e;padding:12px;border-radius:10px;text-align:center}
+.stat b{font-size:21px;display:block;color:white}.stat span{font-size:11px;color:#9ab2c5}
+.agents{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.agent{border:1px solid #27415a;border-radius:12px;padding:12px;background:#0a1522}.agent h3{margin:0 0 5px}.cyan{color:var(--a)}.orange{color:var(--b)}
+.bar{height:7px;background:#203247;border-radius:20px;overflow:hidden;margin-top:8px}.fill{height:100%;width:50%;background:var(--a);transition:width .3s}
+#log{height:330px;overflow:auto;background:#07111c;border-radius:10px;padding:12px;font:12px/1.65 Consolas,monospace}
+#log div{border-bottom:1px solid #1c2d3b;padding:3px 0}
+legend{color:#9bb8cd}label{display:block;margin:12px 0;color:#a9c5d6}
+footer{padding:10px 24px 25px;color:#87a0b1;text-align:center}
+@media(max-width:900px){main{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}}
+</style></head><body>
+<header><div><h1>◈ ECHO // AUTONOMOUS ARENA</h1><small>Two independent computer opponents • endless territory wars • offline simulation</small></div><div id="status">● READY</div></header>
+<main><section class="panel"><div class="toolbar">
+<button class="primary" id="start">▶ Start simulation</button><button id="pause">Ⅱ Pause</button><button id="reset">↻ Reset</button>
+<button id="save">↓ Export history</button><button id="fullscreen">⛶ Fullscreen</button></div>
+<canvas id="board" width="840" height="840" aria-label="Autonomous territory battle arena"></canvas>
+<div class="stats"><div class="stat"><b id="round">1</b><span>ROUND</span></div><div class="stat"><b id="turns">0</b><span>TOTAL MOVES</span></div><div class="stat"><b id="time">00:00:00</b><span>ELAPSED</span></div><div class="stat"><b id="wins">0 : 0</b><span>VICTORIES</span></div></div>
+<p class="muted">Each computer chooses its own moves, claims territory, surrounds enemies, and learns which strategy scores best. A completed match automatically starts another, so the tournament can run for hours.</p>
+</section><aside class="panel"><div class="agents"><div class="agent"><h3 class="cyan">◆ COMPUTER A</h3><small>Azure strategist</small><div class="bar"><div class="fill" id="aBar"></div></div><p id="aInfo">Territory: 0</p></div>
+<div class="agent"><h3 class="orange">◆ COMPUTER B</h3><small>Amber tactician</small><div class="bar"><div class="fill" id="bBar" style="background:var(--b)"></div></div><p id="bInfo">Territory: 0</p></div></div>
+<label>Simulation speed <strong id="speedLabel">8 moves/sec</strong><input id="speed" type="range" min="1" max="60" value="8"></label>
+<label>Board size <select id="size"><option value="18">18 × 18 (fast)</option><option value="24" selected>24 × 24 (balanced)</option><option value="32">32 × 32 (epic)</option></select></label>
+<label>Match duration <select id="duration"><option value="200">200 moves</option><option value="500" selected>500 moves</option><option value="1000">1000 moves</option></select></label>
+<label><input id="auto" type="checkbox" checked> Auto-start next match forever</label>
+<label><input id="effects" type="checkbox" checked> Show glowing effects</label>
+<h3>LIVE STRATEGY FEED</h3><div id="log" role="log" aria-live="off"></div>
+<button id="clear">Clear feed</button>
+</aside></main><footer>Everything runs locally in your browser. Keep the tab open and your computer awake to continue the tournament.</footer>
+<script>
+(()=>{'use strict';
+const $=id=>document.getElementById(id),canvas=$('board'),ctx=canvas.getContext('2d');
+let N=24,grid=[],running=false,round=1,total=0,move=0,wins=[0,0],history=[],startAt=0,elapsed=0,lastFrame=0,acc=0,turn=0,flash=[],scores=[0,0],strategy=[.55,.55],raf=0;
+const dirs=[[1,0],[-1,0],[0,1],[0,-1]],inside=(x,y)=>x>=0&&y>=0&&x<N&&y<N,at=(x,y)=>inside(x,y)?grid[y*N+x]:-1;
+function log(msg){const e=document.createElement('div');e.textContent=`[${new Date().toLocaleTimeString()}] ${msg}`;$('log').prepend(e);while($('log').children.length>110)$('log').lastChild.remove()}
+function resetBoard(){N=+$('size').value;grid=new Int8Array(N*N);const c=Math.floor(N/2),starts=[[2,c],[N-3,c]];for(let p=0;p<2;p++){let [x,y]=starts[p];for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)if(inside(x+dx,y+dy))grid[(y+dy)*N+x+dx]=p+1}move=0;turn=round%2;flash=[];update();draw()}
+function count(){scores=[0,0];for(const v of grid)if(v)scores[v-1]++}
+function neighbors(x,y,p){let ally=0,enemy=0,empty=0;for(const [dx,dy] of dirs){const v=at(x+dx,y+dy);if(v===p+1)ally++;else if(v===2-p)enemy++;else if(v===0)empty++}return {ally,enemy,empty}}
+function pick(p){let best=-1e9,chosen=null,seen=0;
+for(let y=0;y<N;y++)for(let x=0;x<N;x++){const idx=y*N+x,v=grid[idx],n=neighbors(x,y,p);
+if(v===p+1||n.ally===0)continue;
+let value;if(v===0){value=4+n.ally*1.3+n.enemy*2.3+n.empty*.35}
+else{if(n.ally<2)continue;value=3+n.ally*1.2+n.enemy*1.5}
+value+=Math.random()*5+strategy[p]*n.enemy*3;
+value+= (p===0?x/N:(N-x)/N)*.8;
+if(value>best-.45){if(value>best+.45){best=value;chosen=[idx,x,y,v];seen=1}else if(Math.random()<1/++seen)chosen=[idx,x,y,v]}}
+return chosen}
+function step(){const p=turn,choice=pick(p);if(choice){const [idx,x,y,old]=choice;grid[idx]=p+1;flash.push({x,y,p,t:1});if(flash.length>50)flash.shift();
+if(old&&old!==p+1&&move%8===0)log(`Computer ${p?'B':'A'} captured enemy territory at ${x}, ${y}`);
+}else{log(`Computer ${p?'B':'A'} has no legal move`)}
+move++;total++;turn=1-p;
+if(move>=+$('duration').value||(!pick(0)&&!pick(1))){finish();return}
+if(move%5===0)update()}
+function finish(){count();const winner=scores[0]===scores[1]?-1:scores[0]>scores[1]?0:1;if(winner>=0){wins[winner]++;strategy[winner]=Math.min(1.5,strategy[winner]+.015);strategy[1-winner]=Math.max(.2,strategy[1-winner]+(Math.random()-.4)*.04)}
+const msg=`Round ${round}: ${winner<0?'DRAW':`Computer ${winner?'B':'A'} WINS`} (${scores[0]}–${scores[1]})`;log('🏆 '+msg);history.push({round,azure:scores[0],amber:scores[1],winner:winner<0?'Draw':winner?'Amber':'Azure',moves:move});if(history.length>10000)history.shift();
+if($('auto').checked){round++;resetBoard()}else{running=false;$('status').textContent='● MATCH COMPLETE'}update()}
+function update(){count();$('round').textContent=round;$('turns').textContent=total.toLocaleString();$('wins').textContent=`${wins[0]} : ${wins[1]}`;$('aInfo').textContent=`Territory: ${scores[0]} • ${Math.round(strategy[0]*100)}% aggression`;$('bInfo').textContent=`Territory: ${scores[1]} • ${Math.round(strategy[1]*100)}% aggression`;const sum=scores[0]+scores[1]||1;$('aBar').style.width=(scores[0]/sum*100)+'%';$('bBar').style.width=(scores[1]/sum*100)+'%';$('time').textContent=new Date(elapsed*1000).toISOString().slice(11,19)}
+function draw(){const W=canvas.width,s=W/N;ctx.fillStyle='#08131d';ctx.fillRect(0,0,W,W);ctx.strokeStyle='#1b3444';ctx.lineWidth=1;ctx.beginPath();for(let i=0;i<=N;i++){ctx.moveTo(i*s,0);ctx.lineTo(i*s,W);ctx.moveTo(0,i*s);ctx.lineTo(W,i*s)}ctx.stroke();
+for(let y=0;y<N;y++)for(let x=0;x<N;x++){const p=grid[y*N+x];if(!p)continue;const px=x*s,py=y*s;ctx.fillStyle=p===1?'#176b8a':'#96501f';ctx.fillRect(px+1,py+1,s-2,s-2);ctx.fillStyle=p===1?'#58dfff':'#ffb46b';ctx.fillRect(px+3,py+3,Math.max(2,s-6),Math.max(2,s-6));}
+if($('effects').checked){for(const f of flash){ctx.strokeStyle=f.p?'rgba(255,174,95,'+f.t+')':'rgba(90,226,255,'+f.t+')';ctx.lineWidth=3;ctx.strokeRect(f.x*s+2,f.y*s+2,s-4,s-4)}}}
+function frame(now){if(!lastFrame)lastFrame=now;let dt=Math.min(.2,(now-lastFrame)/1000);lastFrame=now;if(running){elapsed+=dt;acc+=dt;const interval=1/(+$('speed').value);let steps=0;while(acc>=interval&&steps<100){step();acc-=interval;steps++;if(!running)break}}for(const f of flash)f.t-=dt*2;flash=flash.filter(f=>f.t>0);draw();if(running)update();raf=requestAnimationFrame(frame)}
+$('start').onclick=()=>{if(!running){running=true;lastFrame=0;$('status').textContent='● TWO COMPUTERS PLAYING';log('Simulation started: Azure vs Amber')}};
+$('pause').onclick=()=>{running=false;$('status').textContent='● PAUSED';log('Simulation paused')};
+$('reset').onclick=()=>{running=false;round=1;total=0;wins=[0,0];elapsed=0;acc=0;history=[];strategy=[.55,.55];resetBoard();$('status').textContent='● READY';log('Tournament reset')};
+$('size').onchange=()=>{running=false;resetBoard();log('Arena resized')};
+$('speed').oninput=()=>{$('speedLabel').textContent=$('speed').value+' moves/sec'};
+$('clear').onclick=()=>{$('log').replaceChildren()};
+$('save').onclick=()=>{const data={title:'ECHO Autonomous Arena',exported:new Date().toISOString(),elapsedSeconds:Math.round(elapsed),totalMoves:total,wins,history};const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='echo-arena-history.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
+$('fullscreen').onclick=()=>{if(document.fullscreenElement)document.exitFullscreen();else canvas.requestFullscreen?.()};
+document.addEventListener('visibilitychange',()=>{lastFrame=0;acc=0});
+resetBoard();log('Two autonomous agents initialized. Press Start.');raf=requestAnimationFrame(frame);
+})();
+</script></body></html>
